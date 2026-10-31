@@ -1,0 +1,1060 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  PlusCircle, 
+  Wallet, 
+  TrendingUp, 
+  Search, 
+  Trash2, 
+  Edit3, 
+  Sun, 
+  Moon, 
+  PieChart as PieChartIcon, 
+  AlertTriangle, 
+  X,
+  Download,
+  LogOut,
+  Lock,
+  Mail,
+  ArrowRight,
+  Globe,
+  Rocket,
+  ChevronDown,
+  ChevronRight,
+  Code,
+  CheckCircle2
+} from 'lucide-react';
+import { 
+  ResponsiveContainer, 
+  PieChart, 
+  Pie, 
+  Cell, 
+  Tooltip, 
+  Legend 
+} from 'recharts';
+
+// Firebase Imports
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  setDoc 
+} from 'firebase/firestore';
+
+// Your Specific Firebase Configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyB-yU1YT45okpa8UoLvGnfSvZNOQ42Rntg",
+  authDomain: "budget-tracker-c96eb.firebaseapp.com",
+  projectId: "budget-tracker-c96eb",
+  storageBucket: "budget-tracker-c96eb.firebasestorage.app",
+  messagingSenderId: "476510198306",
+  appId: "1:476510198306:web:9cbe6eda5718a7ca5fc87b"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = 'budget-tracker-c96eb';
+
+// Default Spreadsheet Data matching user's image
+const DEFAULT_ITEMS = [
+  // Section 1: Loans
+  { task: 'Mariloan', section: 'Loans', category: 'loan', price: 1918.16, quantity: 0.5, status: 'Pending' },
+  { task: 'SB Loan', section: 'Loans', category: 'loan', price: 6352.66, quantity: 0.5, status: 'Pending' },
+  { task: 'MB loan', section: 'Loans', category: 'loan', price: 2323.34, quantity: 0.5, status: 'Pending' },
+  { task: 'RCBC loan', section: 'Loans', category: 'loan', price: 1091.99, quantity: 0.5, status: 'Pending' },
+  { task: 'Leanne', section: 'Loans', category: 'loan', price: 2426.99, quantity: 0.5, status: 'Pending' },
+  { task: 'TV', section: 'Loans', category: 'loan', price: 750.00, quantity: 0.5, status: 'Pending' },
+  { task: 'La Vero', section: 'Loans', category: 'loan', price: 1036.19, quantity: 0.5, status: 'Pending' },
+  { task: 'Muji', section: 'Loans', category: 'loan', price: 773.04, quantity: 0.5, status: 'Pending' },
+  
+  // Section 2: Expenses & Bills
+  { task: 'fun money', section: 'Expenses & Bills', category: 'Expenses', price: 1500.00, quantity: 1, status: 'Pending' },
+  { task: 'Savings', section: 'Expenses & Bills', category: 'Savings', price: 3000.00, quantity: 1, status: 'Pending' },
+  { task: 'Google', section: 'Expenses & Bills', category: 'Bills', price: 700.00, quantity: 1, status: 'Pending' },
+  { task: 'Necessities', section: 'Expenses & Bills', category: 'Expenses', price: 1000.00, quantity: 1, status: 'Pending' },
+  { task: 'transpo', section: 'Expenses & Bills', category: 'Expenses', price: 1300.00, quantity: 1, status: 'Pending' },
+  { task: 'Bills', section: 'Expenses & Bills', category: 'Bills', price: 200.00, quantity: 0.5, status: 'Pending' },
+  { task: 'Globe plan/Netfli', section: 'Expenses & Bills', category: 'Bills', price: 1448.00, quantity: 0.5, status: 'Pending' },
+  { task: 'Loveey', section: 'Expenses & Bills', category: 'Gift', price: 2500.00, quantity: 0.5, status: 'Pending' }
+];
+
+const DEFAULT_SECTIONS = ['Loans', 'Expenses & Bills'];
+const CATEGORIES = ['loan', 'Expenses', 'Savings', 'Bills', 'Gift', 'Other'];
+
+const CATEGORY_COLORS = {
+  'loan': '#EF4444',
+  'Expenses': '#F59E0B',
+  'Savings': '#10B981',
+  'Bills': '#3B82F6',
+  'Gift': '#EC4899',
+  'Other': '#8B5CF6'
+};
+
+export default function App() {
+  const [darkMode, setDarkMode] = useState(true);
+
+  // Auth States
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup'
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  // Data States
+  const [salary, setSalary] = useState(18000);
+  const [items, setItems] = useState([]);
+  const [sections, setSections] = useState(DEFAULT_SECTIONS);
+  const [collapsedSections, setCollapsedSections] = useState({ 'Loans': true });
+  const [newSectionInput, setNewSectionInput] = useState('');
+
+  // UI States
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeployModalOpen, setIsDeployModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+
+  // Form State
+  const [formData, setFormData] = useState({
+    task: '',
+    section: 'Loans',
+    category: 'loan',
+    price: '',
+    quantity: 1,
+    status: 'Pending'
+  });
+
+  // Track Auth State
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currUser) => {
+      setUser(currUser);
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time Firestore Sync per User
+  useEffect(() => {
+    if (!user) {
+      setItems([]);
+      setSections(DEFAULT_SECTIONS);
+      return;
+    }
+
+    const itemsColRef = collection(db, 'artifacts', appId, 'users', user.uid, 'budgetItems');
+    const unsubItems = onSnapshot(
+      itemsColRef,
+      (snapshot) => {
+        if (snapshot.empty) {
+          DEFAULT_ITEMS.forEach(async (item) => {
+            await addDoc(itemsColRef, item);
+          });
+        } else {
+          const userItems = snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data()
+          }));
+          setItems(userItems);
+        }
+      },
+      (error) => console.error("Firestore items error:", error)
+    );
+
+    const settingsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'user_config');
+    const unsubSettings = onSnapshot(
+      settingsDocRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.salary !== undefined) setSalary(data.salary);
+          if (data.sections && Array.isArray(data.sections)) setSections(data.sections);
+        } else {
+          setDoc(settingsDocRef, { salary: 18000, sections: DEFAULT_SECTIONS });
+        }
+      },
+      (error) => console.error("Firestore settings error:", error)
+    );
+
+    return () => {
+      unsubItems();
+      unsubSettings();
+    };
+  }, [user]);
+
+  // Auth Functions
+  const handleSignUp = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      await createUserWithEmailAndPassword(auth, emailInput, passwordInput);
+    } catch (err) {
+      setAuthError(err.message.replace('Firebase: ', ''));
+    }
+  };
+
+  const handleLogIn = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      await signInWithEmailAndPassword(auth, emailInput, passwordInput);
+    } catch (err) {
+      setAuthError(err.message.replace('Firebase: ', ''));
+    }
+  };
+
+  const handleSignOut = () => signOut(auth);
+
+  // Section Handlers
+  const toggleSectionCollapse = (secName) => {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [secName]: !prev[secName]
+    }));
+  };
+
+  const handleAddSection = async (e) => {
+    e.preventDefault();
+    const name = newSectionInput.trim();
+    if (!name || sections.includes(name)) return;
+
+    const updated = [...sections, name];
+    setSections(updated);
+    setNewSectionInput('');
+
+    if (user) {
+      const settingsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'user_config');
+      await setDoc(settingsDocRef, { sections: updated }, { merge: true });
+    }
+  };
+
+  const handleDeleteSection = async (secToDelete) => {
+    const updated = sections.filter((s) => s !== secToDelete);
+    setSections(updated);
+
+    if (user) {
+      const settingsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'user_config');
+      await setDoc(settingsDocRef, { sections: updated }, { merge: true });
+    }
+  };
+
+  // Calculations
+  const sectionTotals = useMemo(() => {
+    const totals = {};
+    sections.forEach((sec) => {
+      totals[sec] = items
+        .filter((i) => i.section === sec)
+        .reduce((sum, i) => sum + (Number(i.price || 0) * Number(i.quantity || 1)), 0);
+    });
+    return totals;
+  }, [items, sections]);
+
+  const totalAllocated = useMemo(() => {
+    return Object.values(sectionTotals).reduce((a, b) => a + b, 0);
+  }, [sectionTotals]);
+
+  const remainingMoney = useMemo(() => {
+    return Number(salary || 0) - totalAllocated;
+  }, [salary, totalAllocated]);
+
+  const chartData = useMemo(() => {
+    const totals = {};
+    items.forEach((item) => {
+      const cat = item.category || 'Other';
+      const itemTotal = Number(item.price || 0) * Number(item.quantity || 1);
+      totals[cat] = (totals[cat] || 0) + itemTotal;
+    });
+
+    return Object.keys(totals).map((cat) => ({
+      name: cat,
+      value: totals[cat],
+      color: CATEGORY_COLORS[cat] || '#8B5CF6'
+    }));
+  }, [items]);
+
+  const filterItem = (i) => {
+    const matchesSearch = (i.task || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'All' || i.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  };
+
+  const handleUpdateSalary = async (newVal) => {
+    setSalary(newVal);
+    if (!user) return;
+    try {
+      const settingsDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'user_config');
+      await setDoc(settingsDocRef, { salary: Number(newVal) }, { merge: true });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateStatus = async (itemId, newStatus) => {
+    if (!user) return;
+    try {
+      const itemDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgetItems', itemId);
+      await updateDoc(itemDocRef, { status: newStatus });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSubmitItem = async (e) => {
+    e.preventDefault();
+    if (!formData.task || !formData.price || !user) return;
+
+    try {
+      const itemsColRef = collection(db, 'artifacts', appId, 'users', user.uid, 'budgetItems');
+      const payload = {
+        task: formData.task,
+        section: formData.section || sections[0] || 'Expenses & Bills',
+        category: formData.category,
+        price: parseFloat(formData.price),
+        quantity: parseFloat(formData.quantity || 1),
+        status: formData.status
+      };
+
+      if (editingItem) {
+        const itemDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgetItems', editingItem.id);
+        await updateDoc(itemDocRef, payload);
+      } else {
+        await addDoc(itemsColRef, payload);
+      }
+      closeModal();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteItem = async (id) => {
+    if (!user) return;
+    try {
+      const itemDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'budgetItems', id);
+      await deleteDoc(itemDocRef);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleEditClick = (item) => {
+    setEditingItem(item);
+    setFormData({
+      task: item.task,
+      section: item.section || sections[0],
+      category: item.category || 'Expenses',
+      price: item.price.toString(),
+      quantity: item.quantity || 1,
+      status: item.status || 'Pending'
+    });
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingItem(null);
+    setFormData({
+      task: '',
+      section: sections[0] || 'Loans',
+      category: 'loan',
+      price: '',
+      quantity: 1,
+      status: 'Pending'
+    });
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['Task,Section,Category,Price,Quantity,Total,Status'];
+    const rows = items.map(
+      (i) => `"${i.task}","${i.section}","${i.category}",${i.price},${i.quantity},${(i.price * i.quantity).toFixed(2)},"${i.status}"`
+    );
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers, ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `ApexBudget_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Login Screen
+  if (!user && !authLoading) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-4 ${darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-900'}`}>
+        <div className={`w-full max-w-md p-8 rounded-3xl border shadow-2xl backdrop-blur-xl ${
+          darkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-white/90 border-slate-200'
+        }`}>
+          <div className="flex justify-center mb-4">
+            <div className="p-3.5 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-2xl shadow-xl text-white">
+              <Wallet className="w-8 h-8" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-extrabold text-center bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+            ApexBudget (₱)
+          </h2>
+          <p className={`text-xs text-center mt-1 mb-6 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            Connected to Firebase Project: <span className="font-mono text-indigo-400">budget-tracker-c96eb</span>
+          </p>
+
+          {authError && (
+            <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{authError}</span>
+            </div>
+          )}
+
+          <form onSubmit={authMode === 'login' ? handleLogIn : handleSignUp} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase mb-1">Email</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="email"
+                  required
+                  placeholder="user@example.com"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  className={`w-full pl-9 pr-4 py-2.5 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    darkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-300'
+                  }`}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase mb-1">Password</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  className={`w-full pl-9 pr-4 py-2.5 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    darkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-300'
+                  }`}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-lg transition-all"
+            >
+              {authMode === 'login' ? 'Sign In' : 'Create Account'}
+            </button>
+          </form>
+
+          <div className="mt-6 text-center text-xs">
+            {authMode === 'login' ? (
+              <p className={darkMode ? 'text-slate-400' : 'text-slate-600'}>
+                Need an account?{' '}
+                <button onClick={() => setAuthMode('signup')} className="font-bold text-indigo-400 hover:underline">
+                  Sign Up
+                </button>
+              </p>
+            ) : (
+              <p className={darkMode ? 'text-slate-400' : 'text-slate-600'}>
+                Already have an account?{' '}
+                <button onClick={() => setAuthMode('login')} className="font-bold text-indigo-400 hover:underline">
+                  Log In
+                </button>
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
+      
+      {/* Background Effect */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl"></div>
+        <div className="absolute top-1/3 -right-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        
+        {/* Header */}
+        <header className={`flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 rounded-2xl backdrop-blur-xl border ${
+          darkMode ? 'bg-slate-900/60 border-slate-800/80 shadow-2xl' : 'bg-white/70 border-slate-200/80 shadow-xl'
+        }`}>
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-xl shadow-lg text-white">
+              <Wallet className="w-7 h-7" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+                ApexBudget (₱)
+              </h1>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1 animate-pulse"></span>
+                  {user?.email}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setIsDeployModalOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-indigo-400 border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 transition-all"
+            >
+              <Rocket className="w-4 h-4" />
+              <span>Deploy Guide</span>
+            </button>
+
+            <button
+              onClick={() => {
+                setEditingItem(null);
+                setFormData({ task: '', section: sections[0] || 'Loans', category: 'loan', price: '', quantity: 1, status: 'Pending' });
+                setIsModalOpen(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 shadow-lg transition-all"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Add Item</span>
+            </button>
+
+            <button
+              onClick={handleExportCSV}
+              className={`p-2.5 rounded-xl border transition-all ${
+                darkMode ? 'border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-slate-300' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-600'
+              }`}
+              title="Export CSV"
+            >
+              <Download className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`p-2.5 rounded-xl border transition-all ${
+                darkMode ? 'border-slate-700 bg-slate-800/60 hover:bg-slate-800 text-amber-400' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-indigo-600'
+              }`}
+            >
+              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
+            <button
+              onClick={handleSignOut}
+              className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl font-medium text-xs border transition-all ${
+                darkMode ? 'border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300' : 'border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700'
+              }`}
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Logout</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Top Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className={`p-6 rounded-2xl border backdrop-blur-xl relative overflow-hidden ${
+            darkMode ? 'bg-slate-900/50 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-lg'
+          }`}>
+            <span className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Salary Money
+            </span>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-2xl font-bold text-indigo-400">₱</span>
+              <input
+                type="number"
+                value={salary}
+                onChange={(e) => handleUpdateSalary(e.target.value)}
+                className={`w-full text-2xl font-extrabold bg-transparent focus:outline-none border-b-2 border-dashed border-indigo-500 ${
+                  darkMode ? 'text-slate-100' : 'text-slate-900'
+                }`}
+              />
+            </div>
+            <p className={`text-xs mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Monthly Income Pool</p>
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-indigo-500"></div>
+          </div>
+
+          <div className={`p-6 rounded-2xl border backdrop-blur-xl relative overflow-hidden ${
+            darkMode ? 'bg-slate-900/50 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-lg'
+          }`}>
+            <span className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Loans Subtotal
+            </span>
+            <div className="mt-2 text-2xl font-extrabold text-rose-500">
+              ₱{(sectionTotals['Loans'] || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <p className={`text-xs mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Collapsible loans section</p>
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-rose-500"></div>
+          </div>
+
+          <div className={`p-6 rounded-2xl border backdrop-blur-xl relative overflow-hidden ${
+            darkMode ? 'bg-slate-900/50 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-lg'
+          }`}>
+            <span className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Expenses & Bills
+            </span>
+            <div className="mt-2 text-2xl font-extrabold text-amber-500">
+              ₱{(sectionTotals['Expenses & Bills'] || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <p className={`text-xs mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>Standard expenses</p>
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-amber-500"></div>
+          </div>
+
+          <div className={`p-6 rounded-2xl border backdrop-blur-xl relative overflow-hidden ${
+            darkMode ? 'bg-slate-900/50 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-lg'
+          }`}>
+            <span className={`text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Remaining Money
+            </span>
+            <div className={`mt-2 text-2xl font-extrabold ${remainingMoney >= 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
+              ₱{remainingMoney.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <p className={`text-xs mt-2 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Salary - Allocated Total
+            </p>
+            <div className={`absolute bottom-0 left-0 right-0 h-1 ${remainingMoney >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
+          </div>
+        </div>
+
+        {/* Dynamic Category Pie Chart */}
+        <div className={`p-6 rounded-2xl border backdrop-blur-xl ${
+          darkMode ? 'bg-slate-900/50 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-lg'
+        }`}>
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <PieChartIcon className="w-5 h-5 text-indigo-400" />
+            Category Allocation Chart
+          </h2>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={chartData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={90}
+                  paddingAngle={4}
+                  dataKey="value"
+                >
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(val) => `₱${Number(val).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+                  contentStyle={{ 
+                    backgroundColor: darkMode ? '#0F172A' : '#FFFFFF', 
+                    borderColor: darkMode ? '#334155' : '#E2E8F0',
+                    borderRadius: '0.75rem'
+                  }}
+                />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Filter Controls & Add Dynamic Section */}
+        <div className={`p-4 rounded-2xl border flex flex-col md:flex-row items-center justify-between gap-4 ${
+          darkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+            <div className="relative w-full sm:w-64">
+              <Search className={`absolute left-3 top-2.5 w-4 h-4 ${darkMode ? 'text-slate-400' : 'text-slate-500'}`} />
+              <input
+                type="text"
+                placeholder="Search task..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className={`w-full pl-9 pr-4 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                  darkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-300'
+                }`}
+              />
+            </div>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className={`w-full sm:w-auto px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                darkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-300'
+              }`}
+            >
+              <option value="All">All Statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Paid">Paid</option>
+            </select>
+          </div>
+
+          {/* Dynamic Section Creator Form */}
+          <form onSubmit={handleAddSection} className="flex items-center gap-2 w-full md:w-auto">
+            <input
+              type="text"
+              placeholder="_____ (Add new section name)"
+              value={newSectionInput}
+              onChange={(e) => setNewSectionInput(e.target.value)}
+              className={`px-3 py-2 rounded-xl text-sm border focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-60 ${
+                darkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-300'
+              }`}
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 whitespace-nowrap shadow-md"
+            >
+              + Add Section
+            </button>
+          </form>
+        </div>
+
+        {/* Dynamic Sections Table List */}
+        {sections.map((secName) => {
+          const isCollapsed = !!collapsedSections[secName];
+          const sectionItems = items.filter((i) => i.section === secName && filterItem(i));
+          const subtotal = sectionTotals[secName] || 0;
+          const isLoans = secName.toLowerCase().includes('loan');
+
+          return (
+            <div 
+              key={secName} 
+              className={`rounded-2xl border backdrop-blur-xl overflow-hidden transition-all duration-300 ${
+                darkMode ? 'bg-slate-900/50 border-slate-800/80' : 'bg-white/80 border-slate-200/80 shadow-lg'
+              }`}
+            >
+              {/* Header Accordion Bar */}
+              <div 
+                className={`p-5 flex items-center justify-between cursor-pointer select-none transition-colors ${
+                  darkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-100/50'
+                }`}
+                onClick={() => toggleSectionCollapse(secName)}
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`transform transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}>
+                    <ArrowRight className="w-5 h-5 text-indigo-400" />
+                  </span>
+                  <div>
+                    <h2 className={`text-lg font-bold flex items-center gap-2 ${isLoans ? 'text-rose-400' : 'text-indigo-400'}`}>
+                      {secName}
+                      {isLoans && (
+                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-semibold">
+                          Temporary / Collapsible
+                        </span>
+                      )}
+                    </h2>
+                    <p className={`text-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {sectionItems.length} items {isCollapsed ? '• Click to expand' : '• Click to collapse'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                  <span className={`text-xs font-bold px-3 py-1.5 rounded-xl border ${
+                    isLoans
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                  }`}>
+                    Subtotal: ₱{subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+
+                  {!DEFAULT_SECTIONS.includes(secName) && (
+                    <button
+                      onClick={() => handleDeleteSection(secName)}
+                      className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 transition-colors"
+                      title="Delete Section"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Table Body */}
+              {!isCollapsed && (
+                <div className={`p-6 pt-0 border-t ${darkMode ? 'border-slate-800/80' : 'border-slate-200/80'}`}>
+                  {sectionItems.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-slate-500">
+                      No items in {secName}. Click "+ Add Item" to populate.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto mt-4">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className={`border-b text-xs uppercase tracking-wider ${darkMode ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                            <th className="py-3 px-4">Task</th>
+                            <th className="py-3 px-4">Category</th>
+                            <th className="py-3 px-4 text-right">Prices</th>
+                            <th className="py-3 px-4 text-center">Quantity</th>
+                            <th className="py-3 px-4 text-right">Totals</th>
+                            <th className="py-3 px-4 text-center">Status</th>
+                            <th className="py-3 px-4 text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${darkMode ? 'divide-slate-800/60' : 'divide-slate-200/60'}`}>
+                          {sectionItems.map((item) => {
+                            const lineTotal = Number(item.price || 0) * Number(item.quantity || 1);
+                            return (
+                              <tr key={item.id} className={darkMode ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
+                                <td className="py-3 px-4 font-semibold text-sm">{item.task}</td>
+                                <td className="py-3 px-4">
+                                  <span 
+                                    className="px-2 py-0.5 rounded text-xs font-medium"
+                                    style={{
+                                      backgroundColor: `${CATEGORY_COLORS[item.category] || '#F59E0B'}20`,
+                                      color: CATEGORY_COLORS[item.category] || '#F59E0B'
+                                    }}
+                                  >
+                                    {item.category}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono text-sm">₱{Number(item.price).toFixed(2)}</td>
+                                <td className="py-3 px-4 text-center font-mono text-sm">{item.quantity}</td>
+                                <td className="py-3 px-4 text-right font-extrabold text-sm text-indigo-400">₱{lineTotal.toFixed(2)}</td>
+                                <td className="py-3 px-4 text-center">
+                                  <select
+                                    value={item.status || 'Pending'}
+                                    onChange={(e) => handleUpdateStatus(item.id, e.target.value)}
+                                    className={`text-xs px-2.5 py-1 rounded-lg font-medium border focus:outline-none ${
+                                      item.status === 'Paid' 
+                                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' 
+                                        : item.status === 'In Progress' 
+                                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
+                                        : 'bg-slate-800/60 border-slate-700 text-slate-300'
+                                    }`}
+                                  >
+                                    <option value="Pending">Pending</option>
+                                    <option value="In Progress">In Progress</option>
+                                    <option value="Paid">Paid</option>
+                                  </select>
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <button onClick={() => handleEditClick(item)} className="p-1.5 rounded hover:bg-slate-700/50 text-slate-300">
+                                      <Edit3 className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => handleDeleteItem(item.id)} className="p-1.5 rounded hover:bg-rose-500/10 text-rose-400">
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+      </div>
+
+      {/* Add / Edit Item Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
+          <div className={`w-full max-w-lg p-6 rounded-2xl border shadow-2xl relative ${
+            darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+          }`}>
+            <button onClick={closeModal} className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:bg-slate-800">
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-xl font-bold mb-4">{editingItem ? 'Edit Item' : 'Add Budget Item'}</h3>
+
+            <form onSubmit={handleSubmitItem} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase mb-1">Target Section</label>
+                <select
+                  value={formData.section}
+                  onChange={(e) => setFormData({ ...formData, section: e.target.value })}
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                    darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                  }`}
+                >
+                  {sections.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold uppercase mb-1">Task Title</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Mariloan, Google, Side Hustle"
+                  value={formData.task}
+                  onChange={(e) => setFormData({ ...formData, task: e.target.value })}
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                  }`}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase mb-1">Category</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                      darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  >
+                    {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase mb-1">Price (₱)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    placeholder="0.00"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                      darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase mb-1">Quantity / Multiplier</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    required
+                    placeholder="1 or 0.5"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                    className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                      darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase mb-1">Initial Status</label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none ${
+                      darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+                    }`}
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="Paid">Paid</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-3 flex gap-3">
+                <button type="button" onClick={closeModal} className="flex-1 py-2.5 rounded-xl text-sm border border-slate-700">
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500">
+                  Save Item
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Deployment Guide Modal */}
+      {isDeployModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className={`w-full max-w-2xl max-h-[85vh] overflow-y-auto p-6 rounded-2xl border shadow-2xl relative ${
+            darkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+          }`}>
+            <button onClick={() => setIsDeployModalOpen(false)} className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:bg-slate-800">
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2 mb-2">
+              <Rocket className="w-6 h-6 text-indigo-400" />
+              <h3 className="text-xl font-bold">Deployment & Firebase Setup Guide</h3>
+            </div>
+            <p className="text-xs text-slate-400 mb-6">
+              Follow these simple steps to deploy this application online using GitHub Pages or Firebase Hosting.
+            </p>
+
+            <div className="space-y-6 text-xs">
+              
+              {/* Step 1: Firebase Auth Settings */}
+              <div className="p-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 space-y-2">
+                <h4 className="font-bold text-sm text-indigo-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" /> 1. Enable Firebase Email/Password Auth
+                </h4>
+                <ol className="list-decimal list-inside space-y-1 text-slate-300">
+                  <li>Go to the <a href="https://console.firebase.google.com/project/budget-tracker-c96eb" target="_blank" rel="noreferrer" className="text-indigo-400 underline">Firebase Console</a>.</li>
+                  <li>Click <b>Authentication</b> → <b>Get Started</b> → <b>Email/Password</b> → Enable and Save.</li>
+                  <li>Under <b>Firestore Database</b>, create a database in production mode with default security rules.</li>
+                </ol>
+              </div>
+
+              {/* Step 2: Option A - GitHub Pages */}
+              <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/60 space-y-2">
+                <h4 className="font-bold text-sm text-purple-400 flex items-center gap-1.5">
+                  <Globe className="w-4 h-4" /> Option A: Deploy to GitHub Pages
+                </h4>
+                <div className="space-y-1 text-slate-300">
+                  <p>1. Initialize Git in your project directory:</p>
+                  <pre className="p-2 rounded bg-slate-900 border border-slate-800 text-indigo-300 font-mono">git init && git add . && git commit -m "Initial commit"</pre>
+                  <p>2. Push code to GitHub repository:</p>
+                  <pre className="p-2 rounded bg-slate-900 border border-slate-800 text-indigo-300 font-mono">git remote add origin https://github.com/YOUR_USERNAME/budget-tracker.git
+git branch -M main
+git push -u origin main</pre>
+                  <p>3. In your GitHub repository settings → <b>Pages</b> → select <b>GitHub Actions</b> to build & host automatically!</p>
+                </div>
+              </div>
+
+              {/* Step 3: Option B - Firebase Hosting */}
+              <div className="p-4 rounded-xl border border-slate-800 bg-slate-950/60 space-y-2">
+                <h4 className="font-bold text-sm text-emerald-400 flex items-center gap-1.5">
+                  <Code className="w-4 h-4" /> Option B: Deploy to Firebase Hosting
+                </h4>
+                <div className="space-y-1 text-slate-300">
+                  <p>1. Install Firebase CLI & Login:</p>
+                  <pre className="p-2 rounded bg-slate-900 border border-slate-800 text-emerald-300 font-mono">npm install -g firebase-tools
+firebase login</pre>
+                  <p>2. Initialize Firebase Hosting in your folder:</p>
+                  <pre className="p-2 rounded bg-slate-900 border border-slate-800 text-emerald-300 font-mono">firebase init hosting</pre>
+                  <p>3. Choose existing project <code className="text-amber-400">budget-tracker-c96eb</code>, set build directory to <code className="text-amber-400">dist</code> or <code className="text-amber-400">build</code>, then run:</p>
+                  <pre className="p-2 rounded bg-slate-900 border border-slate-800 text-emerald-300 font-mono">npm run build && firebase deploy</pre>
+                </div>
+              </div>
+
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button onClick={() => setIsDeployModalOpen(false)} className="px-5 py-2 rounded-xl font-bold text-xs bg-indigo-600 text-white hover:bg-indigo-500">
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
