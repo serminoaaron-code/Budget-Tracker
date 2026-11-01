@@ -6,16 +6,18 @@
     <title>Modern Budget Tracker</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- React & React DOM -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel (Compiles JSX) -->
+    <!-- React 18 & React DOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel (Compiles JSX in Browser) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Chart.js (For Pie Chart) -->
+    <!-- Chart.js (For Expense Breakdown Pie Chart) -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
   <body class="bg-slate-950">
     <div id="root"></div>
-    <script type="text/babel" src="./app.js"></script>
+    
+    <!-- data-type="module" allows Babel to understand ES6 'import' statements -->
+    <script type="text/babel" data-type="module" src="./app.js"></script>
   </body>
 </html>
