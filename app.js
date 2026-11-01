@@ -1,6 +1,6 @@
 const { useState, useEffect, useMemo, useRef } = React;
 
-// --- Firebase Configuration ---
+// Import Firebase ES Modules via CDN
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { 
   getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, 
@@ -66,7 +66,6 @@ function App() {
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
 
-  // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -75,7 +74,6 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // Firestore Sync Listener
   useEffect(() => {
     if (!user || isDemoMode) return;
     const userDocRef = doc(db, 'users', user.uid);
@@ -132,7 +130,7 @@ function App() {
 
   const remainingMoney = salaryMoney - totalExpenses;
 
-  // Render Pie Chart
+  // Chart Rendering
   useEffect(() => {
     if ((!user && !isDemoMode) || !chartRef.current) return;
 
@@ -177,17 +175,17 @@ function App() {
   }, [budgetItems, user, isDemoMode]);
 
   if (authLoading) {
-    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-cyan-400">Loading...</div>;
+    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-cyan-400 font-bold">Loading Budget App...</div>;
   }
 
-  // Login / Signup Screen
+  // Auth Screen
   if (!user && !isDemoMode) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 space-y-6">
           <div className="text-center">
             <h1 className="text-2xl font-bold text-cyan-400">Budget Tracker</h1>
-            <p className="text-xs text-slate-400 mt-1">Sign in to sync your financial data</p>
+            <p className="text-xs text-slate-400 mt-1">Sign in to access your saved data</p>
           </div>
 
           {authError && (
@@ -198,31 +196,31 @@ function App() {
 
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">EMAIL</label>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold">EMAIL</label>
               <input 
                 type="email" required value={email} onChange={e => setEmail(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-100"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-500"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">PASSWORD</label>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold">PASSWORD</label>
               <input 
                 type="password" required value={password} onChange={e => setPassword(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-100"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-500"
               />
             </div>
-            <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm">
+            <button type="submit" className="w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold py-2.5 rounded-xl text-sm transition">
               {authMode === 'login' ? 'Sign In' : 'Create Account'}
             </button>
           </form>
 
-          <div className="text-center text-xs text-slate-400 space-y-2">
-            <button onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="text-cyan-400 underline">
+          <div className="text-center text-xs text-slate-400 space-y-3">
+            <button onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')} className="text-cyan-400 underline font-semibold">
               {authMode === 'login' ? "Don't have an account? Sign Up" : "Already have an account? Sign In"}
             </button>
             <br />
-            <button onClick={() => setIsDemoMode(true)} className="text-slate-500 underline">
-              Try Offline Demo Mode
+            <button onClick={() => setIsDemoMode(true)} className="text-slate-500 hover:text-slate-300 underline">
+              Preview Demo Mode
             </button>
           </div>
         </div>
@@ -230,7 +228,7 @@ function App() {
     );
   }
 
-  // Dashboard Screen
+  // Dashboard View
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -239,12 +237,11 @@ function App() {
             <h1 className="text-2xl font-bold text-cyan-400">Budget Tracker</h1>
             <p className="text-xs text-slate-400">{isDemoMode ? 'Demo Mode' : `User: ${user?.email}`}</p>
           </div>
-          <button onClick={() => { signOut(auth); setIsDemoMode(false); }} className="bg-red-500/10 text-red-400 border border-red-500/20 text-xs px-3 py-1.5 rounded-xl">
+          <button onClick={() => { signOut(auth); setIsDemoMode(false); }} className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs px-3 py-1.5 rounded-xl transition">
             Sign Out
           </button>
         </header>
 
-        {/* Top Cards & Pie Chart */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
@@ -278,7 +275,6 @@ function App() {
             </div>
           </div>
 
-          {/* Pie Chart Card */}
           <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col items-center justify-center">
             <h3 className="text-xs font-semibold text-slate-400 uppercase mb-4">Expense Breakdown</h3>
             <div className="w-48 h-48">
@@ -287,7 +283,6 @@ function App() {
           </div>
         </div>
 
-        {/* Section Creator */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
           <span className="text-sm font-semibold">Custom Sections</span>
           <form onSubmit={(e) => {
@@ -310,7 +305,6 @@ function App() {
           </form>
         </div>
 
-        {/* Budget Tables */}
         {['loan', 'expenses', ...customSections].map(secKey => {
           const items = budgetItems.filter(i => i.section === secKey);
           const total = items.reduce((s, i) => s + (i.price * i.quantity), 0);
@@ -325,16 +319,6 @@ function App() {
                   </button>
                   <h2 className="font-bold capitalize">{secKey.replace(/_/g, ' ')} Section</h2>
                 </div>
-                <button
-                  onClick={() => {
-                    setEditingItem(null);
-                    setForm({ task: '', category: secKey === 'loan' ? 'loan' : 'Expenses', section: secKey, price: '', quantity: 1, status: 'Pending' });
-                    setShowModal(true);
-                  }}
-                  className="bg-slate-800 border border-slate-700 text-xs px-3 py-1.5 rounded-lg"
-                >
-                  + Add Row
-                </button>
               </div>
 
               {!isCollapsed && (
