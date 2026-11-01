@@ -66,6 +66,7 @@ function App() {
   const chartRef = useRef(null);
   const chartInstance = useRef(null);
 
+  // Listen to Auth State
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -74,6 +75,7 @@ function App() {
     return () => unsubscribe();
   }, []);
 
+  // Listen to Firestore real-time updates
   useEffect(() => {
     if (!user || isDemoMode) return;
     const userDocRef = doc(db, 'users', user.uid);
@@ -124,13 +126,73 @@ function App() {
     }
   };
 
+  const openAddItemModal = (secKey) => {
+    setEditingItem(null);
+    setForm({
+      task: '',
+      category: secKey === 'loan' ? 'loan' : 'Expenses',
+      section: secKey,
+      price: '',
+      quantity: 1,
+      status: 'Pending'
+    });
+    setShowModal(true);
+  };
+
+  const openEditItemModal = (item) => {
+    setEditingItem(item);
+    setForm({
+      task: item.task,
+      category: item.category,
+      section: item.section || 'expenses',
+      price: item.price,
+      quantity: item.quantity,
+      status: item.status || 'Pending'
+    });
+    setShowModal(true);
+  };
+
+  const handleSaveItem = (e) => {
+    e.preventDefault();
+    const priceNum = parseFloat(form.price) || 0;
+    const qtyNum = parseFloat(form.quantity) || 1;
+
+    let updated;
+    if (editingItem) {
+      updated = budgetItems.map(i => i.id === editingItem.id ? { ...form, price: priceNum, quantity: qtyNum, id: i.id } : i);
+    } else {
+      const newItem = { ...form, price: priceNum, quantity: qtyNum, id: Date.now().toString() };
+      updated = [...budgetItems, newItem];
+    }
+
+    setBudgetItems(updated);
+    setShowModal(false);
+    syncToFirestore(updated, salaryMoney, customSections);
+  };
+
+  const handleDeleteItem = (id) => {
+    const updated = budgetItems.filter(i => i.id !== id);
+    setBudgetItems(updated);
+    syncToFirestore(updated, salaryMoney, customSections);
+  };
+
+  const handleRemoveSection = (secKey) => {
+    if (confirm(`Are you sure you want to delete section "${secKey.replace(/_/g, ' ')}"?`)) {
+      const updatedSections = customSections.filter(s => s !== secKey);
+      const updatedItems = budgetItems.filter(i => i.section !== secKey);
+      setCustomSections(updatedSections);
+      setBudgetItems(updatedItems);
+      syncToFirestore(updatedItems, salaryMoney, updatedSections);
+    }
+  };
+
   const totalExpenses = useMemo(() => {
     return budgetItems.filter(i => i.section !== 'loan').reduce((s, i) => s + (i.price * i.quantity), 0);
   }, [budgetItems]);
 
   const remainingMoney = salaryMoney - totalExpenses;
 
-  // Chart Rendering
+  // Render Pie Chart
   useEffect(() => {
     if ((!user && !isDemoMode) || !chartRef.current) return;
 
@@ -175,17 +237,17 @@ function App() {
   }, [budgetItems, user, isDemoMode]);
 
   if (authLoading) {
-    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-cyan-400 font-bold">Loading Budget App...</div>;
+    return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-cyan-400 font-bold">Loading...</div>;
   }
 
   // Auth Screen
   if (!user && !isDemoMode) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 space-y-6">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 space-y-6 shadow-2xl">
           <div className="text-center">
             <h1 className="text-2xl font-bold text-cyan-400">Budget Tracker</h1>
-            <p className="text-xs text-slate-400 mt-1">Sign in to access your saved data</p>
+            <p className="text-xs text-slate-400 mt-1">Sign in or create an account</p>
           </div>
 
           {authError && (
@@ -196,14 +258,14 @@ function App() {
 
           <form onSubmit={handleAuth} className="space-y-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-semibold">EMAIL</label>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase">Email</label>
               <input 
                 type="email" required value={email} onChange={e => setEmail(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-500"
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-semibold">PASSWORD</label>
+              <label className="block text-xs text-slate-400 mb-1 font-semibold uppercase">Password</label>
               <input 
                 type="password" required value={password} onChange={e => setPassword(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-500"
@@ -242,6 +304,7 @@ function App() {
           </button>
         </header>
 
+        {/* Overview Cards & Chart */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl">
@@ -283,6 +346,7 @@ function App() {
           </div>
         </div>
 
+        {/* Custom Section Creator */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-center justify-between">
           <span className="text-sm font-semibold">Custom Sections</span>
           <form onSubmit={(e) => {
@@ -305,22 +369,43 @@ function App() {
           </form>
         </div>
 
+        {/* Budget Section Tables */}
         {['loan', 'expenses', ...customSections].map(secKey => {
           const items = budgetItems.filter(i => i.section === secKey);
           const total = items.reduce((s, i) => s + (i.price * i.quantity), 0);
           const isCollapsed = collapsedSections[secKey];
 
           return (
-            <div key={secKey} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-              <div className="p-4 bg-slate-800/50 flex justify-between items-center">
+            <div key={secKey} className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              {/* Header */}
+              <div className="p-4 bg-slate-800/50 flex justify-between items-center border-b border-slate-800">
                 <div className="flex items-center space-x-2">
-                  <button onClick={() => setCollapsedSections(prev => ({ ...prev, [secKey]: !prev[secKey] }))} className="text-slate-400">
+                  <button onClick={() => setCollapsedSections(prev => ({ ...prev, [secKey]: !prev[secKey] }))} className="text-slate-400 hover:text-slate-200">
                     {isCollapsed ? '▼' : '▲'}
                   </button>
                   <h2 className="font-bold capitalize">{secKey.replace(/_/g, ' ')} Section</h2>
                 </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => openAddItemModal(secKey)}
+                    className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-1.5 rounded-lg transition"
+                  >
+                    + Add Row
+                  </button>
+                  {secKey !== 'loan' && secKey !== 'expenses' && (
+                    <button
+                      onClick={() => handleRemoveSection(secKey)}
+                      className="text-slate-500 hover:text-red-400 text-xs px-2 py-1 transition"
+                      title="Delete Section"
+                    >
+                      🗑️
+                    </button>
+                  )}
+                </div>
               </div>
 
+              {/* Table Body */}
               {!isCollapsed && (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
@@ -332,24 +417,53 @@ function App() {
                         <th className="p-3 text-right">Qty</th>
                         <th className="p-3 text-right">Total</th>
                         <th className="p-3 text-center">Status</th>
+                        <th className="p-3 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/50">
-                      {items.map(item => (
-                        <tr key={item.id}>
-                          <td className="p-3 font-medium">{item.task}</td>
-                          <td className="p-3 text-xs">{item.category}</td>
-                          <td className="p-3 text-right font-mono">₱{item.price.toFixed(2)}</td>
-                          <td className="p-3 text-right font-mono">{item.quantity}</td>
-                          <td className="p-3 text-right font-mono font-bold">₱{(item.price * item.quantity).toFixed(2)}</td>
-                          <td className="p-3 text-center text-xs">{item.status}</td>
+                      {items.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" className="p-4 text-center text-slate-500 italic text-xs">
+                            No rows yet. Click "+ Add Row" above to add an item.
+                          </td>
                         </tr>
-                      ))}
+                      ) : (
+                        items.map(item => (
+                          <tr key={item.id} className="hover:bg-slate-800/30 transition">
+                            <td className="p-3 font-medium text-slate-200">{item.task}</td>
+                            <td className="p-3 text-xs text-slate-400">{item.category}</td>
+                            <td className="p-3 text-right font-mono">₱{item.price.toFixed(2)}</td>
+                            <td className="p-3 text-right font-mono">{item.quantity}</td>
+                            <td className="p-3 text-right font-mono font-bold text-slate-100">₱{(item.price * item.quantity).toFixed(2)}</td>
+                            <td className="p-3 text-center text-xs">
+                              <span className={`px-2 py-0.5 rounded-full ${item.status === 'Paid' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                                {item.status || 'Pending'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right space-x-2">
+                              <button 
+                                onClick={() => openEditItemModal(item)}
+                                className="text-slate-400 hover:text-cyan-400 text-xs transition"
+                                title="Edit"
+                              >
+                                ✏️
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteItem(item.id)}
+                                className="text-slate-400 hover:text-red-400 text-xs transition"
+                                title="Delete"
+                              >
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
-                  <div className="p-4 bg-slate-950/80 flex justify-between items-center font-bold">
-                    <span>Total</span>
-                    <span className="text-cyan-400 font-mono">₱{total.toFixed(2)}</span>
+                  <div className="p-4 bg-slate-950/80 flex justify-between items-center font-bold border-t border-slate-800">
+                    <span className="text-xs uppercase text-slate-400">Total</span>
+                    <span className="text-cyan-400 font-mono text-lg">₱{total.toFixed(2)}</span>
                   </div>
                 </div>
               )}
@@ -357,6 +471,84 @@ function App() {
           );
         })}
       </div>
+
+      {/* Add / Edit Item Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="font-bold">{editingItem ? 'Edit Budget Item' : 'Add New Item'}</h3>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-200">✕</button>
+            </div>
+
+            <form onSubmit={handleSaveItem} className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Task / Description</label>
+                <input
+                  type="text" required value={form.task}
+                  onChange={e => setForm({ ...form, task: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Category</label>
+                <input
+                  type="text" required value={form.category}
+                  onChange={e => setForm({ ...form, category: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Price (₱)</label>
+                  <input
+                    type="number" step="0.01" required value={form.price}
+                    onChange={e => setForm({ ...form, price: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Quantity / Multiplier</label>
+                  <input
+                    type="number" step="0.1" required value={form.quantity}
+                    onChange={e => setForm({ ...form, quantity: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Status</label>
+                <select
+                  value={form.status}
+                  onChange={e => setForm({ ...form, status: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="Paid">Paid</option>
+                </select>
+              </div>
+
+              <div className="pt-2 flex justify-end space-x-2">
+                <button
+                  type="button" onClick={() => setShowModal(false)}
+                  className="px-4 py-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-xs bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
