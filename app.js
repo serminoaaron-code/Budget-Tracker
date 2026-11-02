@@ -44,8 +44,8 @@ const initialCreditCards = [
 ];
 
 const initialBudgetItems = [
-  { id: '1', task: 'Kuya Joker', category: 'loan', section: 'loan', price: 8000.00, quantity: 1, status: 'Pending', bankName: 'SeaBank', loanId: 'l1' },
-  { id: '2', task: 'Necessities', category: 'Expenses', section: 'expenses', price: 1500.00, quantity: 1, status: 'Paid', bankName: 'GoTyme', loanId: '' }
+  { id: '1', task: 'Kuya Joker', category: 'loan', section: 'loan', price: 8000.00, quantity: 1, status: 'Pending', loanId: 'l1' },
+  { id: '2', task: 'Necessities', category: 'Expenses', section: 'expenses', price: 1500.00, quantity: 1, status: 'Paid', loanId: '' }
 ];
 
 function App() {
@@ -57,7 +57,7 @@ function App() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
 
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'loans' | 'savings' | 'cards'
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [currentPeriod, setCurrentPeriod] = useState('March 2026 - 1st Half');
   const [salaryMoney, setSalaryMoney] = useState(19000);
 
@@ -69,15 +69,16 @@ function App() {
 
   const [loanFilter, setLoanFilter] = useState('All');
   const [showModal, setShowModal] = useState(false);
-  const [modalType, setModalType] = useState('budgetItem'); // 'budgetItem' | 'loan' | 'bank' | 'card'
+  const [modalType, setModalType] = useState('budgetItem');
   const [editingItem, setEditingItem] = useState(null);
 
-  const [budgetForm, setBudgetForm] = useState({ task: '', category: 'Expenses', section: 'expenses', price: '', quantity: 1, status: 'Pending', bankName: 'SeaBank', loanId: '' });
+  const [budgetForm, setBudgetForm] = useState({ task: '', category: 'Expenses', section: 'expenses', price: '', quantity: 1, status: 'Pending', loanId: '' });
   const [loanForm, setLoanForm] = useState({ name: '', monthlyPayment: '', remainingBalance: '', status: 'Active', notes: '' });
   const [bankForm, setBankForm] = useState({ bankName: '', balance: '', accountType: 'Digital Bank' });
   const [cardForm, setCardForm] = useState({ cardName: '', creditLimit: '', statementBalance: '', cutoffDate: '', dueDate: '' });
 
-  const syncToFirestore = async (newBudget, newLoans, newBanks, newCards, newSalary, newSections) => {
+  // Sync state to Firestore securely
+  const syncToFirestore = async (newBudget, newLoans, newBanks, newCards, newSalary, newSections, newPeriod) => {
     if (!user || isDemoMode) return;
     try {
       const userDocRef = doc(db, 'users', user.uid);
@@ -88,7 +89,7 @@ function App() {
         cardsList: newCards !== undefined ? newCards : cardsList,
         salaryMoney: newSalary !== undefined ? newSalary : salaryMoney,
         customSections: newSections !== undefined ? newSections : customSections,
-        currentPeriod: currentPeriod
+        currentPeriod: newPeriod !== undefined ? newPeriod : currentPeriod
       }, { merge: true });
     } catch (e) {
       console.error("Firestore Sync Error:", e);
@@ -157,6 +158,31 @@ function App() {
   const totalBankSavings = useMemo(() => banksList.reduce((s, b) => s + (parseFloat(b.balance) || 0), 0), [banksList]);
   const totalCreditDebt = useMemo(() => cardsList.reduce((s, c) => s + (parseFloat(c.statementBalance) || 0), 0), [cardsList]);
 
+  // Remove Row Handler with Firestore Sync
+  const handleDeleteBudgetItem = (id) => {
+    const updated = budgetItems.filter(i => i.id !== id);
+    setBudgetItems(updated);
+    syncToFirestore(updated, loansList, banksList, cardsList, salaryMoney, customSections, currentPeriod);
+  };
+
+  const handleDeleteLoan = (id) => {
+    const updated = loansList.filter(l => l.id !== id);
+    setLoansList(updated);
+    syncToFirestore(budgetItems, updated, banksList, cardsList, salaryMoney, customSections, currentPeriod);
+  };
+
+  const handleDeleteBank = (id) => {
+    const updated = banksList.filter(b => b.id !== id);
+    setBanksList(updated);
+    syncToFirestore(budgetItems, loansList, updated, cardsList, salaryMoney, customSections, currentPeriod);
+  };
+
+  const handleDeleteCard = (id) => {
+    const updated = cardsList.filter(c => c.id !== id);
+    setCardsList(updated);
+    syncToFirestore(budgetItems, loansList, banksList, updated, salaryMoney, customSections, currentPeriod);
+  };
+
   // Finish Cycle & Deduct Paid Loans
   const handleArchiveAndNextCycle = () => {
     if (!confirm(`Are you sure you want to finalize "${currentPeriod}"? Paid loan items will deduct from your Payoff Tracker balance.`)) return;
@@ -178,7 +204,7 @@ function App() {
     setLoansList(updatedLoans);
     setBudgetItems(resetBudget);
     setCurrentPeriod(nextPeriod);
-    syncToFirestore(resetBudget, updatedLoans, banksList, cardsList, salaryMoney, customSections);
+    syncToFirestore(resetBudget, updatedLoans, banksList, cardsList, salaryMoney, customSections, nextPeriod);
   };
 
   const handleSaveModal = (e) => {
@@ -193,7 +219,7 @@ function App() {
         updated = [...budgetItems, { ...budgetForm, price: priceNum, quantity: qtyNum, id: Date.now().toString() }];
       }
       setBudgetItems(updated);
-      syncToFirestore(updated, loansList, banksList, cardsList, salaryMoney, customSections);
+      syncToFirestore(updated, loansList, banksList, cardsList, salaryMoney, customSections, currentPeriod);
     } else if (modalType === 'loan') {
       const paymentNum = parseFloat(loanForm.monthlyPayment) || 0;
       const remainingNum = parseFloat(loanForm.remainingBalance) || 0;
@@ -204,7 +230,7 @@ function App() {
         updated = [...loansList, { ...loanForm, monthlyPayment: paymentNum, remainingBalance: remainingNum, id: Date.now().toString() }];
       }
       setLoansList(updated);
-      syncToFirestore(budgetItems, updated, banksList, cardsList, salaryMoney, customSections);
+      syncToFirestore(budgetItems, updated, banksList, cardsList, salaryMoney, customSections, currentPeriod);
     } else if (modalType === 'bank') {
       const balNum = parseFloat(bankForm.balance) || 0;
       let updated;
@@ -214,7 +240,7 @@ function App() {
         updated = [...banksList, { ...bankForm, balance: balNum, id: Date.now().toString() }];
       }
       setBanksList(updated);
-      syncToFirestore(budgetItems, loansList, updated, cardsList, salaryMoney, customSections);
+      syncToFirestore(budgetItems, loansList, updated, cardsList, salaryMoney, customSections, currentPeriod);
     } else if (modalType === 'card') {
       const limitNum = parseFloat(cardForm.creditLimit) || 0;
       const balNum = parseFloat(cardForm.statementBalance) || 0;
@@ -225,7 +251,7 @@ function App() {
         updated = [...cardsList, { ...cardForm, creditLimit: limitNum, statementBalance: balNum, id: Date.now().toString() }];
       }
       setCardsList(updated);
-      syncToFirestore(budgetItems, loansList, banksList, updated, salaryMoney, customSections);
+      syncToFirestore(budgetItems, loansList, banksList, updated, salaryMoney, customSections, currentPeriod);
     }
     setShowModal(false);
   };
@@ -332,7 +358,7 @@ function App() {
               <span className="text-[11px] text-slate-400 font-semibold uppercase">Half-Month Salary</span>
               <div className="flex items-center text-lg font-bold text-slate-800">
                 <span>₱</span>
-                <input type="number" value={salaryMoney} onChange={(e) => { const val = parseFloat(e.target.value) || 0; setSalaryMoney(val); syncToFirestore(budgetItems, loansList, banksList, cardsList, val, customSections); }} className="w-24 bg-transparent border-none font-bold text-slate-800 focus:outline-none" />
+                <input type="number" value={salaryMoney} onChange={(e) => { const val = parseFloat(e.target.value) || 0; setSalaryMoney(val); syncToFirestore(budgetItems, loansList, banksList, cardsList, val, customSections, currentPeriod); }} className="w-24 bg-transparent border-none font-bold text-slate-800 focus:outline-none" />
               </div>
             </div>
           </div>
@@ -396,7 +422,20 @@ function App() {
                   <h3 className="font-bold text-slate-800 text-sm flex items-center space-x-2">
                     <span>📊</span> <span>Monthly Spending Trend</span>
                   </h3>
-                  <input type="text" value={currentPeriod} onChange={e => { setCurrentPeriod(e.target.value); syncToFirestore(budgetItems, loansList, banksList, cardsList, salaryMoney, customSections); }} className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-slate-600 font-bold" />
+                  {/* EDITABLE MONTH / CYCLE FIELD */}
+                  <div className="flex items-center space-x-1 border border-slate-200 bg-slate-50 px-2 py-1 rounded-lg">
+                    <span className="text-xs text-slate-400 font-semibold">Period:</span>
+                    <input 
+                      type="text" 
+                      value={currentPeriod} 
+                      onChange={e => { 
+                        const val = e.target.value; 
+                        setCurrentPeriod(val); 
+                        syncToFirestore(budgetItems, loansList, banksList, cardsList, salaryMoney, customSections, val); 
+                      }} 
+                      className="text-xs bg-transparent font-bold text-blue-900 border-none focus:outline-none w-44" 
+                    />
+                  </div>
                 </div>
                 <div className="h-32 flex items-end justify-between px-4 pt-6 border-b border-slate-100">
                   <div className="flex flex-col items-center space-y-1"><div className="w-3 h-4 bg-blue-300 rounded-t"></div><span className="text-[10px] text-slate-400">Week 1</span></div>
@@ -418,7 +457,7 @@ function App() {
                       <span className="text-blue-600 text-lg">{secKey === 'loan' ? '🏛️' : '🛒'}</span>
                       <h2 className="font-bold text-slate-800 capitalize">{secKey.replace(/_/g, ' ')} Section</h2>
                     </div>
-                    <button onClick={() => { setModalType('budgetItem'); setEditingItem(null); setBudgetForm({ task: '', category: secKey === 'loan' ? 'loan' : 'Expenses', section: secKey, price: '', quantity: 1, status: 'Pending', bankName: 'SeaBank', loanId: '' }); setShowModal(true); }} className="bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-semibold px-3 py-1.5 rounded-xl transition">
+                    <button onClick={() => { setModalType('budgetItem'); setEditingItem(null); setBudgetForm({ task: '', category: secKey === 'loan' ? 'loan' : 'Expenses', section: secKey, price: '', quantity: 1, status: 'Pending', loanId: '' }); setShowModal(true); }} className="bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-semibold px-3 py-1.5 rounded-xl transition">
                       + Add Row
                     </button>
                   </div>
@@ -428,7 +467,6 @@ function App() {
                       <tr>
                         <th className="p-3">TASK</th>
                         <th className="p-3">LINKED TRACKER LOAN</th>
-                        <th className="p-3">SAVINGS / BANK</th>
                         <th className="p-3 text-right">MONTHLY / PRICE</th>
                         <th className="p-3 text-center">STATUS</th>
                         <th className="p-3 text-right">ACTIONS</th>
@@ -437,7 +475,7 @@ function App() {
                     <tbody className="divide-y divide-slate-100">
                       {items.length === 0 ? (
                         <tr>
-                          <td colSpan="6" className="p-6 text-center text-slate-400 italic">
+                          <td colSpan="5" className="p-6 text-center text-slate-400 italic">
                             <div className="text-2xl mb-1">📋</div>
                             No rows yet. Click + Add Row above.
                           </td>
@@ -451,24 +489,19 @@ function App() {
                                 <span>👤</span> <span>{item.task}</span>
                               </td>
                               <td className="p-3 text-slate-500 font-medium">{linkedLoan ? `🔗 ${linkedLoan.name}` : '—'}</td>
-                              <td className="p-3">
-                                <span className="bg-blue-50 text-blue-600 px-2 py-1 rounded-full text-[11px] font-medium flex items-center w-fit space-x-1">
-                                  <span>🌊</span> <span>{item.bankName || 'SeaBank'}</span>
-                                </span>
-                              </td>
                               <td className="p-3 text-right font-bold text-slate-800">₱{(item.price * item.quantity).toFixed(2)}</td>
                               <td className="p-3 text-center">
                                 <button onClick={() => {
                                   const updated = budgetItems.map(i => i.id === item.id ? { ...i, status: i.status === 'Paid' ? 'Pending' : 'Paid' } : i);
                                   setBudgetItems(updated);
-                                  syncToFirestore(updated, loansList, banksList, cardsList, salaryMoney, customSections);
+                                  syncToFirestore(updated, loansList, banksList, cardsList, salaryMoney, customSections, currentPeriod);
                                 }} className={`px-3 py-1 rounded-full text-[11px] font-semibold ${item.status === 'Paid' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-50 text-amber-600 border border-amber-200'}`}>
                                   ● {item.status || 'Pending'}
                                 </button>
                               </td>
                               <td className="p-3 text-right space-x-2">
                                 <button onClick={() => { setModalType('budgetItem'); setEditingItem(item); setBudgetForm(item); setShowModal(true); }} className="text-blue-500 hover:text-blue-700">✏️</button>
-                                <button onClick={() => { const updated = budgetItems.filter(i => i.id !== item.id); setBudgetItems(updated); syncToFirestore(updated, loansList, banksList, cardsList, salaryMoney, customSections); }} className="text-red-400 hover:text-red-600">🗑️</button>
+                                <button onClick={() => handleDeleteBudgetItem(item.id)} className="text-red-400 hover:text-red-600">🗑️</button>
                               </td>
                             </tr>
                           );
@@ -528,7 +561,7 @@ function App() {
 
                     <div className="pt-2 flex space-x-2">
                       <button onClick={() => { setModalType('loan'); setEditingItem(loan); setLoanForm(loan); setShowModal(true); }} className="w-full bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold py-1.5 rounded-xl border border-slate-200 transition">Edit Terms ✏️</button>
-                      <button onClick={() => { const updated = loansList.filter(l => l.id !== loan.id); setLoansList(updated); syncToFirestore(budgetItems, updated, banksList, cardsList, salaryMoney, customSections); }} className="bg-red-50 hover:bg-red-100 text-red-500 px-3 py-1.5 rounded-xl text-xs border border-red-200">🗑️</button>
+                      <button onClick={() => handleDeleteLoan(loan.id)} className="bg-red-50 hover:bg-red-100 text-red-500 px-3 py-1.5 rounded-xl text-xs border border-red-200">🗑️</button>
                     </div>
                   </div>
                 );
@@ -558,7 +591,7 @@ function App() {
                   </div>
                   <div className="space-x-2">
                     <button onClick={() => { setModalType('bank'); setEditingItem(bank); setBankForm(bank); setShowModal(true); }} className="text-blue-500 hover:text-blue-700 text-xs">✏️</button>
-                    <button onClick={() => { const updated = banksList.filter(b => b.id !== bank.id); setBanksList(updated); syncToFirestore(budgetItems, loansList, updated, cardsList, salaryMoney, customSections); }} className="text-red-400 hover:text-red-600 text-xs">🗑️</button>
+                    <button onClick={() => handleDeleteBank(bank.id)} className="text-red-400 hover:text-red-600 text-xs">🗑️</button>
                   </div>
                 </div>
               ))}
@@ -584,7 +617,7 @@ function App() {
                     <h3 className="font-bold text-slate-800">{card.cardName}</h3>
                     <div className="space-x-2">
                       <button onClick={() => { setModalType('card'); setEditingItem(card); setCardForm(card); setShowModal(true); }} className="text-blue-500 hover:text-blue-700 text-xs">✏️</button>
-                      <button onClick={() => { const updated = cardsList.filter(c => c.id !== card.id); setCardsList(updated); syncToFirestore(budgetItems, loansList, banksList, updated, salaryMoney, customSections); }} className="text-red-400 hover:text-red-600 text-xs">🗑️</button>
+                      <button onClick={() => handleDeleteCard(card.id)} className="text-red-400 hover:text-red-600 text-xs">🗑️</button>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-500">
@@ -622,12 +655,6 @@ function App() {
                     <select value={budgetForm.loanId} onChange={e => setBudgetForm({ ...budgetForm, loanId: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800">
                       <option value="">None (General Expense)</option>
                       {loansList.map(loan => <option key={loan.id} value={loan.id}>{loan.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-500 mb-1">Savings / Bank Source</label>
-                    <select value={budgetForm.bankName} onChange={e => setBudgetForm({ ...budgetForm, bankName: e.target.value })} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800">
-                      {banksList.map(b => <option key={b.id} value={b.bankName}>{b.bankName}</option>)}
                     </select>
                   </div>
                   <div>
